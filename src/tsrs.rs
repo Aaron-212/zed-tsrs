@@ -6,23 +6,6 @@ use zed_extension_api::{self as zed, LanguageServerId, Result, settings::LspSett
 
 struct TsrsExtension {
     cached_binary_path: Option<String>,
-    cached_version: Option<String>,
-}
-
-#[derive(Debug, Default)]
-struct TsrsSettings {
-    package_version: Option<String>,
-}
-
-impl TsrsSettings {
-    fn from_lsp_settings(settings: &Value) -> Self {
-        let package_version = settings
-            .get("package_version")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        Self { package_version }
-    }
 }
 
 fn merge_json_value_into(source: Value, target: &mut Value) {
@@ -102,15 +85,12 @@ impl TsrsExtension {
         }
     }
 
-    fn install_package(&mut self, id: &LanguageServerId, custom_version: Option<&str>) -> Result<()> {
+    fn install_package(&mut self, id: &LanguageServerId) -> Result<()> {
         let package_name = Self::get_platform_package_name()?;
 
         zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::CheckingForUpdate);
 
-        let target_version = match custom_version {
-            Some(version) => version.to_string(),
-            None => zed::npm_package_latest_version(package_name)?,
-        };
+        let target_version = zed::npm_package_latest_version(package_name)?;
 
         if self.should_install_or_update(package_name, &target_version) {
             zed::set_language_server_installation_status(id, &zed::LanguageServerInstallationStatus::Downloading);
@@ -128,12 +108,11 @@ impl TsrsExtension {
 
         // Cache the successful installation
         self.cached_binary_path = Some(binary_path.to_string_lossy().to_string());
-        self.cached_version = Some(target_version);
 
         Ok(())
     }
 
-    fn binary_path(&mut self, id: &LanguageServerId, package_version: Option<&str>) -> Result<String> {
+    fn binary_path(&mut self, id: &LanguageServerId) -> Result<String> {
         // Return cached path if we have it and binary still exists
         if let Some(cached_path) = self.cached_binary_path.as_ref()
             && fs::metadata(cached_path).is_ok_and(|stat| stat.is_file())
@@ -142,7 +121,7 @@ impl TsrsExtension {
         }
 
         // Install or update package as needed
-        self.install_package(id, package_version)?;
+        self.install_package(id)?;
 
         let binary_path =
             Self::get_native_binary_path().map_err(|e| format!("Failed to locate native binary: {}", e))?;
@@ -155,7 +134,6 @@ impl zed::Extension for TsrsExtension {
     fn new() -> Self {
         Self {
             cached_binary_path: None,
-            cached_version: None,
         }
     }
 
@@ -166,17 +144,11 @@ impl zed::Extension for TsrsExtension {
     ) -> zed_extension_api::Result<zed_extension_api::Command> {
         let lsp_settings = LspSettings::for_worktree(language_server_id.as_ref(), worktree).ok();
 
-        let settings = lsp_settings
-            .as_ref()
-            .and_then(|settings| settings.settings.as_ref().map(TsrsSettings::from_lsp_settings))
-            .unwrap_or_default();
-
         let env = lsp_settings
             .and_then(|lsp_settings| lsp_settings.binary)
             .and_then(|binary| binary.env);
 
-        let package_version = settings.package_version.as_deref();
-        let executable_path = self.binary_path(language_server_id, package_version)?;
+        let executable_path = self.binary_path(language_server_id)?;
 
         Ok(zed::Command {
             command: std::env::current_dir()
