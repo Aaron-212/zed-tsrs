@@ -1,0 +1,11 @@
+[package]
+name = "tsrs"
+version = "1.1.0"
+edition = "2024"
+
+[lib]
+path = "src/tsrs.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"
