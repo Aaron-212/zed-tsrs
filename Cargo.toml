@@ -1,7 +1,8 @@
 [package]
-name = "tsrs"
+name = "tsrs-lsp"
 version = "1.1.0"
 edition = "2024"
+publish = false
 
 [lib]
 path = "src/tsrs.rs"
